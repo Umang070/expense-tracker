@@ -13,7 +13,7 @@ type LoginResponse = {
 };
 
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5000";
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5001";
 
 export async function loginUser(payload: LoginPayload): Promise<LoginResponse> {
   const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
@@ -23,7 +23,7 @@ export async function loginUser(payload: LoginPayload): Promise<LoginResponse> {
     },
     body: JSON.stringify(payload),
   });
-
+  console.log("Response", response);
   if (!response.ok) {
     const errorData = (await response.json().catch(() => null)) as
       | { message?: string }
