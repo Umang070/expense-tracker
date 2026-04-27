@@ -42,8 +42,8 @@ export function LoginForm() {
       setIsLoading(true);
       const response = await loginUser(form);
 
-      localStorage.setItem("expense_tracker_token", response.token);
-      localStorage.setItem("expense_tracker_user", JSON.stringify(response.user));
+      localStorage.setItem("user_token", response.token);
+      localStorage.setItem("user_details", JSON.stringify(response.user));
 
       router.push("/dashboard");
     } catch (submitError) {
