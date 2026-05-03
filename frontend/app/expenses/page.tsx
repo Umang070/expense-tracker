@@ -1,8 +1,13 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useState } from "react";
+import { ChangeEvent, FormEvent, useCallback, useEffect, useState } from "react";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { ExpensesTable, type ExpenseRow } from "@/components/expenses/expenses-table";
+import {
+  createExpense,
+  listExpenses,
+  mapApiExpenseToRow,
+} from "@/lib/expenses";
 
 const categoryOptions = [
   "Petrol/Gas",
@@ -51,6 +56,10 @@ export default function ExpensesPage() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [form, setForm] = useState<ExpenseFormState>(initialExpenseForm);
   const [expenses, setExpenses] = useState<ExpenseRow[]>([]);
+  const [listLoading, setListLoading] = useState(true);
+  const [listError, setListError] = useState<string | null>(null);
+  const [submitLoading, setSubmitLoading] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<{
     amount?: string;
     category?: string;
@@ -59,6 +68,32 @@ export default function ExpensesPage() {
     receipt?: string;
   }>({});
   const [fileInputKey, setFileInputKey] = useState(0);
+
+  const loadExpenses = useCallback(async (options?: { silent?: boolean }) => {
+    setListError(null);
+    if (!options?.silent) {
+      setListLoading(true);
+    }
+    try {
+      const result = await listExpenses({ page: 1, limit: 100 });
+      setExpenses(result.data.map(mapApiExpenseToRow));
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to load expenses.";
+      setListError(message);
+      setExpenses([]);
+    } finally {
+      if (!options?.silent) {
+        setListLoading(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      void loadExpenses();
+    });
+  }, [loadExpenses]);
 
   const validateForm = () => {
     const errors: {
@@ -106,8 +141,9 @@ export default function ExpensesPage() {
     }
   };
 
-  const onSubmitExpense = (event: FormEvent<HTMLFormElement>) => {
+  const onSubmitExpense = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setSubmitError(null);
     const validationErrors = validateForm();
     setFieldErrors(validationErrors);
 
@@ -115,21 +151,28 @@ export default function ExpensesPage() {
       return;
     }
 
-    const newExpense: ExpenseRow = {
-      id: crypto.randomUUID(),
-      amount: Number(form.amount),
-      category: form.category,
-      paymentMethod: form.paymentMethod,
-      description: form.description.trim(),
-      date: form.date,
-      receiptName: form.receipt?.name,
-    };
-
-    setExpenses((prev) => [newExpense, ...prev]);
-    setForm(initialExpenseForm);
-    setFileInputKey((prev) => prev + 1);
-    setFieldErrors({});
-    setShowAddForm(false);
+    try {
+      setSubmitLoading(true);
+      await createExpense({
+        amount: Number(form.amount),
+        category: form.category,
+        paymentMethod: form.paymentMethod,
+        description: form.description.trim(),
+        date: form.date,
+        receiptName: form.receipt?.name ?? null,
+      });
+      setForm(initialExpenseForm);
+      setFileInputKey((prev) => prev + 1);
+      setFieldErrors({});
+      setShowAddForm(false);
+      await loadExpenses({ silent: true });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to save expense.";
+      setSubmitError(message);
+    } finally {
+      setSubmitLoading(false);
+    }
   };
 
   return (
@@ -146,6 +189,7 @@ export default function ExpensesPage() {
               setForm(initialExpenseForm);
               setFileInputKey((prev) => prev + 1);
               setFieldErrors({});
+              setSubmitError(null);
             }}
             className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
           >
@@ -168,13 +212,19 @@ export default function ExpensesPage() {
         </div>
       </section>
 
-      <section className="mt-10 flex min-h-[55vh] items-center justify-center">
-        {expenses.length === 0 ? (
+      <section className="mt-10 flex min-h-[55vh] flex-col items-center justify-center">
+        {listLoading ? (
+          <p className="text-center text-sm text-slate-600">Loading expenses…</p>
+        ) : listError ? (
+          <p className="max-w-md text-center text-sm text-rose-600">{listError}</p>
+        ) : expenses.length === 0 ? (
           <p className="text-center text-sm text-slate-600">
             No expense found. Click Add Expense to get started.
           </p>
         ) : (
-          <ExpensesTable rows={expenses} />
+          <div className="w-full">
+            <ExpensesTable rows={expenses} />
+          </div>
         )}
       </section>
 
@@ -190,6 +240,7 @@ export default function ExpensesPage() {
                   setForm(initialExpenseForm);
                   setFileInputKey((prev) => prev + 1);
                   setFieldErrors({});
+                  setSubmitError(null);
                 }}
                 className="rounded-md px-2 py-1 text-slate-500 transition hover:bg-slate-100"
                 aria-label="Close add expense dialog"
@@ -379,6 +430,12 @@ export default function ExpensesPage() {
                 />
               </div>
 
+              {submitError ? (
+                <p className="md:col-span-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                  {submitError}
+                </p>
+              ) : null}
+
               <div className="md:col-span-2 flex justify-end gap-3">
                 <button
                   type="button"
@@ -387,6 +444,7 @@ export default function ExpensesPage() {
                     setForm(initialExpenseForm);
                     setFileInputKey((prev) => prev + 1);
                     setFieldErrors({});
+                    setSubmitError(null);
                   }}
                   className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
                 >
@@ -394,9 +452,10 @@ export default function ExpensesPage() {
                 </button>
                 <button
                   type="submit"
-                  className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+                  disabled={submitLoading}
+                  className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-500"
                 >
-                  Add
+                  {submitLoading ? "Saving…" : "Add"}
                 </button>
               </div>
             </form>

@@ -26,18 +26,22 @@ export function DashboardShell({
   const router = useRouter();
 
   useEffect(() => {
-    const token = localStorage.getItem("user_token");
+    const token =
+      localStorage.getItem("expense_tracker_token") ??
+      localStorage.getItem("user_token");
     if (!token) {
       router.replace("/login");
     }
   }, [router]);
 
   const onLogout = () => {
+    localStorage.removeItem("expense_tracker_token");
+    localStorage.removeItem("expense_tracker_user");
     localStorage.removeItem("user_token");
     localStorage.removeItem("user_details");
 
     Object.keys(localStorage).forEach((key) => {
-      if (key.startsWith("user_")) {
+      if (key.startsWith("expense_tracker_") || key.startsWith("user_")) {
         localStorage.removeItem(key);
       }
     });

@@ -9,3 +9,16 @@ export function signAuthToken(userId: number): string {
 
   return jwt.sign({ sub: userId }, secret, options);
 }
+
+export function verifyAuthToken(token: string): { sub: number } {
+  const secret: Secret = env.JWT_SECRET;
+  const payload = jwt.verify(token, secret) as { sub?: string | number };
+
+  if (payload.sub === undefined) {
+    throw new Error("Token payload is invalid.");
+  }
+
+  return {
+    sub: Number(payload.sub)
+  };
+}
