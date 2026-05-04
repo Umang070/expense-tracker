@@ -1,5 +1,7 @@
 "use client";
 
+import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
+import EditIcon from "@mui/icons-material/Edit";
 import FilterListIcon from "@mui/icons-material/FilterList";
 import {
   Box,
@@ -33,6 +35,8 @@ export type ExpenseRow = {
 
 type ExpensesTableProps = {
   rows: ExpenseRow[];
+  onEditExpense?: (row: ExpenseRow) => void;
+  onDeleteExpense?: (row: ExpenseRow) => void;
 };
 
 type Order = "asc" | "desc";
@@ -143,7 +147,7 @@ function formatUsdAmount(n: number): string {
   }).format(n);
 }
 
-export function ExpensesTable({ rows }: ExpensesTableProps) {
+export function ExpensesTable({ rows, onEditExpense, onDeleteExpense }: ExpensesTableProps) {
   const [order, setOrder] = useState<Order>("desc");
   const [orderBy, setOrderBy] = useState<SortableColumn>("date");
   const [selectedIds, setSelectedIds] = useState<readonly string[]>([]);
@@ -173,7 +177,7 @@ export function ExpensesTable({ rows }: ExpensesTableProps) {
   const amountExtent = useMemo(() => {
     if (rows.length === 0) return null;
     const vals = rows.map((r) => r.amount);
-    let min = Math.min(...vals);
+    const min = Math.min(...vals);
     let max = Math.max(...vals);
     if (min === max) {
       max = min + 1;
@@ -673,6 +677,9 @@ export function ExpensesTable({ rows }: ExpensesTableProps) {
                 </TableCell>
               ))}
               <TableCell sx={{ fontWeight: 700 }}>Receipt</TableCell>
+              <TableCell align="right" sx={{ fontWeight: 700, width: 1, whiteSpace: "nowrap" }}>
+                Actions
+              </TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -714,6 +721,47 @@ export function ExpensesTable({ rows }: ExpensesTableProps) {
                   >
                     {row.receiptName ?? "No file"}
                   </Typography>
+                </TableCell>
+                <TableCell
+                  align="right"
+                  padding="checkbox"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Box
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "flex-end",
+                      gap: 1,
+                    }}
+                  >
+                    <Tooltip title="Edit expense">
+                      <IconButton
+                        size="small"
+                        aria-label={`edit expense ${row.id}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onEditExpense?.(row);
+                        }}
+                        sx={{ color: "text.secondary" }}
+                      >
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Delete expense">
+                      <IconButton
+                        size="small"
+                        aria-label={`delete expense ${row.id}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteExpense?.(row);
+                        }}
+                        sx={{ color: "text.secondary" }}
+                      >
+                        <DeleteOutlinedIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
                 </TableCell>
               </TableRow>
             ))}

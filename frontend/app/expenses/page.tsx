@@ -1,12 +1,14 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useCallback, useEffect, useState } from "react";
+import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { ExpensesTable, type ExpenseRow } from "@/components/expenses/expenses-table";
 import {
   createExpense,
+  deleteExpense,
   listExpenses,
   mapApiExpenseToRow,
+  updateExpense,
 } from "@/lib/expenses";
 
 const categoryOptions = [
@@ -41,6 +43,8 @@ type ExpenseFormState = {
   description: string;
   date: string;
   receipt: File | null;
+  /** When editing, filename already stored on the server if user does not pick a new file */
+  existingReceiptName: string | null;
 };
 
 const initialExpenseForm: ExpenseFormState = {
@@ -50,10 +54,12 @@ const initialExpenseForm: ExpenseFormState = {
   description: "",
   date: new Date().toISOString().slice(0, 10),
   receipt: null,
+  existingReceiptName: null,
 };
 
 export default function ExpensesPage() {
-  const [showAddForm, setShowAddForm] = useState(false);
+  const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
+  const [expenseEditId, setExpenseEditId] = useState<string | null>(null);
   const [form, setForm] = useState<ExpenseFormState>(initialExpenseForm);
   const [expenses, setExpenses] = useState<ExpenseRow[]>([]);
   const [listLoading, setListLoading] = useState(true);
@@ -68,6 +74,25 @@ export default function ExpensesPage() {
     receipt?: string;
   }>({});
   const [fileInputKey, setFileInputKey] = useState(0);
+  const [deleteTarget, setDeleteTarget] = useState<ExpenseRow | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const isEditMode = expenseEditId !== null;
+
+  const categorySelectOptions = useMemo(() => {
+    const extra =
+      form.category && !categoryOptions.includes(form.category) ? [form.category] : [];
+    return [...categoryOptions, ...extra];
+  }, [form.category]);
+
+  const paymentSelectOptions = useMemo(() => {
+    const extra =
+      form.paymentMethod && !paymentMethodOptions.includes(form.paymentMethod)
+        ? [form.paymentMethod]
+        : [];
+    return [...paymentMethodOptions, ...extra];
+  }, [form.paymentMethod]);
 
   const loadExpenses = useCallback(async (options?: { silent?: boolean }) => {
     setListError(null);
@@ -141,6 +166,41 @@ export default function ExpensesPage() {
     }
   };
 
+  const closeExpenseDialog = () => {
+    setExpenseDialogOpen(false);
+    setExpenseEditId(null);
+    setForm(initialExpenseForm);
+    setFileInputKey((prev) => prev + 1);
+    setFieldErrors({});
+    setSubmitError(null);
+  };
+
+  const openAddExpenseDialog = () => {
+    setExpenseEditId(null);
+    setForm(initialExpenseForm);
+    setFileInputKey((prev) => prev + 1);
+    setFieldErrors({});
+    setSubmitError(null);
+    setExpenseDialogOpen(true);
+  };
+
+  const openEditExpenseDialog = (row: ExpenseRow) => {
+    setExpenseEditId(row.id);
+    setForm({
+      amount: row.amount,
+      category: row.category,
+      paymentMethod: row.paymentMethod,
+      description: row.description,
+      date: row.date.slice(0, 10),
+      receipt: null,
+      existingReceiptName: row.receiptName ?? null,
+    });
+    setFileInputKey((prev) => prev + 1);
+    setFieldErrors({});
+    setSubmitError(null);
+    setExpenseDialogOpen(true);
+  };
+
   const onSubmitExpense = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSubmitError(null);
@@ -151,20 +211,30 @@ export default function ExpensesPage() {
       return;
     }
 
+    const receiptName = form.receipt?.name ?? form.existingReceiptName ?? null;
+
     try {
       setSubmitLoading(true);
-      await createExpense({
-        amount: Number(form.amount),
-        category: form.category,
-        paymentMethod: form.paymentMethod,
-        description: form.description.trim(),
-        date: form.date,
-        receiptName: form.receipt?.name ?? null,
-      });
-      setForm(initialExpenseForm);
-      setFileInputKey((prev) => prev + 1);
-      setFieldErrors({});
-      setShowAddForm(false);
+      if (isEditMode && expenseEditId) {
+        await updateExpense(Number(expenseEditId), {
+          amount: Number(form.amount),
+          category: form.category,
+          paymentMethod: form.paymentMethod,
+          description: form.description.trim(),
+          date: form.date,
+          receiptName,
+        });
+      } else {
+        await createExpense({
+          amount: Number(form.amount),
+          category: form.category,
+          paymentMethod: form.paymentMethod,
+          description: form.description.trim(),
+          date: form.date,
+          receiptName,
+        });
+      }
+      closeExpenseDialog();
       await loadExpenses({ silent: true });
     } catch (error) {
       const message =
@@ -172,6 +242,26 @@ export default function ExpensesPage() {
       setSubmitError(message);
     } finally {
       setSubmitLoading(false);
+    }
+  };
+
+  const confirmDeleteExpense = async () => {
+    if (!deleteTarget) return;
+    setDeleteError(null);
+    setDeleteLoading(true);
+    try {
+      await deleteExpense(Number(deleteTarget.id));
+      if (expenseEditId === deleteTarget.id) {
+        closeExpenseDialog();
+      }
+      setDeleteTarget(null);
+      await loadExpenses({ silent: true });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to delete expense.";
+      setDeleteError(message);
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -184,13 +274,7 @@ export default function ExpensesPage() {
         <div className="flex flex-wrap justify-end gap-3">
           <button
             type="button"
-            onClick={() => {
-              setShowAddForm(true);
-              setForm(initialExpenseForm);
-              setFileInputKey((prev) => prev + 1);
-              setFieldErrors({});
-              setSubmitError(null);
-            }}
+            onClick={openAddExpenseDialog}
             className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
           >
             + Add Expense
@@ -223,27 +307,30 @@ export default function ExpensesPage() {
           </p>
         ) : (
           <div className="w-full">
-            <ExpensesTable rows={expenses} />
+            <ExpensesTable
+              rows={expenses}
+              onEditExpense={openEditExpenseDialog}
+              onDeleteExpense={(row) => {
+                setDeleteTarget(row);
+                setDeleteError(null);
+              }}
+            />
           </div>
         )}
       </section>
 
-      {showAddForm ? (
+      {expenseDialogOpen ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/25 p-4 backdrop-blur-sm">
           <div className="w-full max-w-xl rounded-xl border border-slate-200 bg-white p-5">
             <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-slate-900">Add Expense</h3>
+              <h3 className="text-lg font-semibold text-slate-900">
+                {isEditMode ? "Edit Expense" : "Add Expense"}
+              </h3>
               <button
                 type="button"
-                onClick={() => {
-                  setShowAddForm(false);
-                  setForm(initialExpenseForm);
-                  setFileInputKey((prev) => prev + 1);
-                  setFieldErrors({});
-                  setSubmitError(null);
-                }}
+                onClick={closeExpenseDialog}
                 className="rounded-md px-2 py-1 text-slate-500 transition hover:bg-slate-100"
-                aria-label="Close add expense dialog"
+                aria-label={isEditMode ? "Close edit expense dialog" : "Close add expense dialog"}
               >
                 ×
               </button>
@@ -310,7 +397,7 @@ export default function ExpensesPage() {
                   }`}
                 >
                   <option value="">Select category</option>
-                  {categoryOptions.map((category) => (
+                  {categorySelectOptions.map((category) => (
                     <option key={category} value={category}>
                       {category}
                     </option>
@@ -344,7 +431,7 @@ export default function ExpensesPage() {
                   }`}
                 >
                   <option value="">Select payment method</option>
-                  {paymentMethodOptions.map((option) => (
+                  {paymentSelectOptions.map((option) => (
                     <option key={option} value={option}>
                       {option}
                     </option>
@@ -405,6 +492,10 @@ export default function ExpensesPage() {
                   <p className="mt-1 text-xs text-slate-500">
                     Selected: {form.receipt.name}
                   </p>
+                ) : form.existingReceiptName ? (
+                  <p className="mt-1 text-xs text-slate-500">
+                    Current file: {form.existingReceiptName}
+                  </p>
                 ) : null}
                 {fieldErrors.receipt ? (
                   <p className="mt-1 text-xs text-rose-600">{fieldErrors.receipt}</p>
@@ -439,13 +530,7 @@ export default function ExpensesPage() {
               <div className="md:col-span-2 flex justify-end gap-3">
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowAddForm(false);
-                    setForm(initialExpenseForm);
-                    setFileInputKey((prev) => prev + 1);
-                    setFieldErrors({});
-                    setSubmitError(null);
-                  }}
+                  onClick={closeExpenseDialog}
                   className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
                 >
                   Cancel
@@ -455,10 +540,56 @@ export default function ExpensesPage() {
                   disabled={submitLoading}
                   className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-500"
                 >
-                  {submitLoading ? "Saving…" : "Add"}
+                  {submitLoading ? "Saving…" : isEditMode ? "Save" : "Add"}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      ) : null}
+
+      {deleteTarget ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/25 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-expense-title"
+        >
+          <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-5 shadow-lg">
+            <h3 id="delete-expense-title" className="text-lg font-semibold text-slate-900">
+              Delete expense
+            </h3>
+            <p className="mt-3 text-sm text-slate-600">
+              Are you sure you want to delete this expense? This action cannot be undone.
+            </p>
+            {deleteError ? (
+              <p className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                {deleteError}
+              </p>
+            ) : null}
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                disabled={deleteLoading}
+                onClick={() => {
+                  setDeleteTarget(null);
+                  setDeleteError(null);
+                }}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleteLoading}
+                onClick={() => {
+                  void confirmDeleteExpense();
+                }}
+                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:bg-rose-400"
+              >
+                {deleteLoading ? "Deleting…" : "Delete"}
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
