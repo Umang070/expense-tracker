@@ -76,11 +76,14 @@ export function SpendingByCategory({ rows }: SpendingByCategoryProps) {
     return (
       <Card>
         <CardHeader>
-          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-            Spending by category
-          </p>
-          <CardTitle className="text-lg">No data yet</CardTitle>
-          <CardDescription>Add expenses to see your category breakdown.</CardDescription>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle className="text-lg font-medium tracking-wide text-muted-foreground uppercase"> Spending by Category</CardTitle>
+            <CardDescription>Add expenses to see your category breakdown.</CardDescription>
+           
+          </div>
+        </div>
+
         </CardHeader>
       </Card>
     );
@@ -89,13 +92,18 @@ export function SpendingByCategory({ rows }: SpendingByCategoryProps) {
   return (
     <Card className="@container border-slate-200 ring-slate-200/80">
       <CardHeader className="border-b border-border/60">
-        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-          Spending by category
-        </p>
-        <CardTitle className="sr-only">Spending by category</CardTitle>
-        {rangeLabel ? (
-          <CardDescription className="text-sm text-foreground/80">{rangeLabel}</CardDescription>
-        ) : null}
+
+      <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle className="text-lg font-medium tracking-wide text-muted-foreground uppercase"> Spending by Category</CardTitle>
+           {rangeLabel? (<CardDescription>
+             {rangeLabel}
+            </CardDescription>) : null}
+
+          </div>
+        </div>
+
+
       </CardHeader>
       <CardContent className="pt-6">
         <div className="grid gap-8 lg:grid-cols-[minmax(0,320px)_1fr] lg:items-start">

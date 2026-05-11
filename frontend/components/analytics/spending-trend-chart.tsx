@@ -6,6 +6,7 @@ import type { ExpenseRow } from "@/components/expenses/expenses-table";
 import {
   spendingSeriesByGranularity,
   type TrendGranularity,
+  spendingDateRangeLabel
 } from "@/lib/analytics";
 import {
   Card,
@@ -20,6 +21,7 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
+import { SpendingTrendApexChart } from "@/components/analytics/spending-trend-apex-chart";
 
 export const description = "A line chart";
 
@@ -54,17 +56,21 @@ export function SpendingTrendChart({ rows }: SpendingTrendChartProps) {
       })),
     [rows, granularity]
   );
+  
+  const rangeLabel = useMemo(() => spendingDateRangeLabel(rows), [rows]);
+
 
   if (chartData.length === 0) {
     return (
       <Card className="border-slate-200 ring-slate-200/80">
         <CardHeader className="border-b border-border/60">
-          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-            Spending trends
-          </p>
-          <CardTitle className="text-lg">No data yet</CardTitle>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <CardTitle className="text-lg font-medium tracking-wide text-muted-foreground uppercase"> Spending trends</CardTitle>
+
           <CardDescription>No spending trend data available</CardDescription>
+          </div>
         </CardHeader>
+     
         <CardContent className="pt-6 text-sm text-muted-foreground">
           Add expenses to see monthly trend lines.
         </CardContent>
@@ -77,13 +83,11 @@ export function SpendingTrendChart({ rows }: SpendingTrendChartProps) {
       <CardHeader className="border-b border-border/60">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-              Spending trends
-            </p>
-            <CardTitle className="text-lg">Line Chart</CardTitle>
-            <CardDescription>
-              {chartData[0].month} - {chartData[chartData.length - 1].month}
-            </CardDescription>
+            <CardTitle className="text-lg font-medium tracking-wide text-muted-foreground uppercase"> Spending trends</CardTitle>
+
+            {rangeLabel? (<CardDescription>
+             {rangeLabel}
+            </CardDescription>) : null}
           </div>
           <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1">
             {(["day", "month", "year"] as const).map((value) => (
@@ -104,7 +108,7 @@ export function SpendingTrendChart({ rows }: SpendingTrendChartProps) {
         </div>
       </CardHeader>
       <CardContent>
-        <ChartContainer config={chartConfig} className="h-[320px] w-full">
+        {/* <ChartContainer config={chartConfig} className="h-[320px] w-full">
           <LineChart
             accessibilityLayer
             data={chartData}
@@ -163,7 +167,18 @@ export function SpendingTrendChart({ rows }: SpendingTrendChartProps) {
               activeDot={{ r: 5 }}
             />
           </LineChart>
-        </ChartContainer>
+        </ChartContainer> */}
+
+      
+          <SpendingTrendApexChart
+            granularity={granularity}
+            categories={chartData.map((d) =>
+              granularity === "year" ? d.month : String(d.month).slice(0, 6)
+            )}
+            seriesData={chartData.map((d) => d.desktop)}
+            height={350}
+          />
+     
       </CardContent>
     </Card>
   );

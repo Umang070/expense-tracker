@@ -1,11 +1,13 @@
 import { app } from "./app";
 import { env } from "./config/env";
 import { connectDatabase } from "./config/database";
+import { ensureExpenseReceiptMimeColumn } from "./config/ensure-schema";
 import { syncModels } from "./models";
 
 async function bootstrap(): Promise<void> {
   await connectDatabase();
   await syncModels();
+  await ensureExpenseReceiptMimeColumn();
 
   app.listen(env.PORT, () => {
     // eslint-disable-next-line no-console

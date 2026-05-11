@@ -1,10 +1,15 @@
 import { Expense } from "../models";
 import { HttpError } from "../utils/http-error";
+import { unlinkReceiptVariantsFromDisk } from "../utils/receipt-storage";
 import {
   CreateExpenseInput,
   ListExpensesQuery,
   UpdateExpenseInput
 } from "../validations/expense.validation";
+
+export type UpdateExpenseServiceInput = UpdateExpenseInput & {
+  receiptMimeType?: string | null;
+};
 
 export async function createExpense(userId: number, input: CreateExpenseInput) {
   return Expense.create({
@@ -14,7 +19,8 @@ export async function createExpense(userId: number, input: CreateExpenseInput) {
     paymentMethod: input.paymentMethod,
     description: input.description || null,
     date: input.date,
-    receiptName: input.receiptName ?? null
+    receiptName: input.receiptName ?? null,
+    receiptMimeType: null
   });
 }
 
@@ -29,7 +35,7 @@ export async function listExpenses(userId: number, query: ListExpensesQuery) {
   });
 
   return {
-    data: result.rows,
+    data: result.rows.map((row) => row.get({ plain: true })),
     pagination: {
       page: query.page,
       limit: query.limit,
@@ -42,7 +48,7 @@ export async function listExpenses(userId: number, query: ListExpensesQuery) {
 export async function updateExpense(
   userId: number,
   expenseId: number,
-  input: UpdateExpenseInput
+  input: UpdateExpenseServiceInput
 ) {
   const expense = await Expense.findOne({ where: { id: expenseId, userId } });
   if (!expense) {
@@ -56,10 +62,14 @@ export async function updateExpense(
     description: input.description ?? expense.description,
     date: input.date ?? expense.date,
     receiptName:
-      input.receiptName === undefined ? expense.receiptName : input.receiptName
+      input.receiptName === undefined ? expense.receiptName : input.receiptName,
+    receiptMimeType:
+      input.receiptMimeType === undefined
+        ? expense.receiptMimeType
+        : input.receiptMimeType
   });
 
-  return expense;
+  return expense.reload();
 }
 
 export async function deleteExpense(userId: number, expenseId: number) {
@@ -67,6 +77,8 @@ export async function deleteExpense(userId: number, expenseId: number) {
   if (!expense) {
     throw new HttpError(404, "Expense not found.");
   }
+
+  await unlinkReceiptVariantsFromDisk({ userId: expense.userId, expenseId });
 
   await expense.destroy();
 }

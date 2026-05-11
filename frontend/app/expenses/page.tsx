@@ -1,15 +1,25 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  ChangeEvent,
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { ExpensesTable, type ExpenseRow } from "@/components/expenses/expenses-table";
 import {
   createExpense,
   deleteExpense,
+  fetchExpenseReceipt,
   listExpenses,
   mapApiExpenseToRow,
   updateExpense,
 } from "@/lib/expenses";
+import { notify } from "@/lib/toast";
 
 const categoryOptions = [
   "Petrol/Gas",
@@ -47,6 +57,8 @@ type ExpenseFormState = {
   existingReceiptName: string | null;
 };
 
+type ExportScope = "selected" | "current-page" | "all";
+
 const initialExpenseForm: ExpenseFormState = {
   amount: "",
   category: "",
@@ -56,6 +68,78 @@ const initialExpenseForm: ExpenseFormState = {
   receipt: null,
   existingReceiptName: null,
 };
+
+function toCsvField(value: string): string {
+  if (value.includes(",") || value.includes("\"") || value.includes("\n")) {
+    return `"${value.replaceAll("\"", "\"\"")}"`;
+  }
+  return value;
+}
+
+function buildExpensesCsv(rows: ExpenseRow[]): string {
+  const header = [
+    "Amount",
+    "Category",
+    "Payment Method",
+    "Date",
+    "Description",
+    "Receipt Name",
+  ];
+  const lines = rows.map((row) =>
+    [
+      row.amount.toFixed(2),
+      row.category,
+      row.paymentMethod,
+      row.date,
+      row.description ?? "",
+      row.receiptName ?? "",
+    ]
+      .map((v) => toCsvField(String(v)))
+      .join(",")
+  );
+  return [header.join(","), ...lines].join("\n");
+}
+
+function buildSampleExpensesCsv(): string {
+  const sampleRow: ExpenseRow = {
+    id: "sample",
+    amount: 125.5,
+    category: "Food",
+    paymentMethod: "UPI",
+    date: new Date().toISOString().slice(0, 10),
+    description: "Lunch with team",
+    receiptName: "sample-receipt.jpg",
+  };
+  return buildExpensesCsv([sampleRow]);
+}
+
+function parseCsvLine(line: string): string[] {
+  const fields: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (ch === "\"") {
+      if (inQuotes && line[i + 1] === "\"") {
+        current += "\"";
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (ch === "," && !inQuotes) {
+      fields.push(current);
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  fields.push(current);
+  return fields.map((f) => f.trim());
+}
+
+function normalizeCsvHeader(header: string): string {
+  return header.toLowerCase().replace(/[\s_]+/g, "");
+}
 
 export default function ExpensesPage() {
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
@@ -77,8 +161,66 @@ export default function ExpensesPage() {
   const [deleteTarget, setDeleteTarget] = useState<ExpenseRow | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [exportScope, setExportScope] = useState<ExportScope>("selected");
+  const [selectedExpenseIds, setSelectedExpenseIds] = useState<string[]>([]);
+  const [currentPageExpenses, setCurrentPageExpenses] = useState<ExpenseRow[]>([]);
+  const [importLoading, setImportLoading] = useState(false);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
+  const [receiptPreview, setReceiptPreview] = useState<{
+    url: string;
+    mimeType: string;
+    name: string;
+  } | null>(null);
+  const [viewingReceiptId, setViewingReceiptId] = useState<string | null>(null);
 
   const isEditMode = expenseEditId !== null;
+
+  const closeReceiptPreview = useCallback(() => {
+    setReceiptPreview((prev) => {
+      if (prev?.url) {
+        URL.revokeObjectURL(prev.url);
+      }
+      return null;
+    });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (receiptPreview?.url) {
+        URL.revokeObjectURL(receiptPreview.url);
+      }
+    };
+  }, [receiptPreview?.url]);
+
+  const handleViewReceipt = useCallback(async (row: ExpenseRow) => {
+    if (!row.receiptMimeType?.trim()) {
+      notify.warning(
+        "There is no receipt file saved for this expense yet. Edit it and attach a PDF or image, or imported rows may list a filename without a stored file.",
+      );
+      return;
+    }
+    setViewingReceiptId(row.id);
+    try {
+      const { blob, mimeType } = await fetchExpenseReceipt(Number(row.id));
+      setReceiptPreview((prev) => {
+        if (prev?.url) {
+          URL.revokeObjectURL(prev.url);
+        }
+        return {
+          url: URL.createObjectURL(blob),
+          mimeType,
+          name: row.receiptName ?? "Receipt",
+        };
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not load receipt.";
+      notify.error(message);
+    } finally {
+      setViewingReceiptId(null);
+    }
+  }, []);
 
   const categorySelectOptions = useMemo(() => {
     const extra =
@@ -93,6 +235,12 @@ export default function ExpensesPage() {
         : [];
     return [...paymentMethodOptions, ...extra];
   }, [form.paymentMethod]);
+
+  const selectedExpenses = useMemo(() => {
+    if (selectedExpenseIds.length === 0) return [];
+    const selectedSet = new Set(selectedExpenseIds);
+    return expenses.filter((row) => selectedSet.has(row.id));
+  }, [expenses, selectedExpenseIds]);
 
   const loadExpenses = useCallback(async (options?: { silent?: boolean }) => {
     setListError(null);
@@ -216,23 +364,30 @@ export default function ExpensesPage() {
     try {
       setSubmitLoading(true);
       if (isEditMode && expenseEditId) {
-        await updateExpense(Number(expenseEditId), {
-          amount: Number(form.amount),
-          category: form.category,
-          paymentMethod: form.paymentMethod,
-          description: form.description.trim(),
-          date: form.date,
-          receiptName,
-        });
+        await updateExpense(
+          Number(expenseEditId),
+          {
+            amount: Number(form.amount),
+            category: form.category,
+            paymentMethod: form.paymentMethod,
+            description: form.description.trim(),
+            date: form.date,
+            receiptName,
+          },
+          form.receipt
+        );
       } else {
-        await createExpense({
-          amount: Number(form.amount),
-          category: form.category,
-          paymentMethod: form.paymentMethod,
-          description: form.description.trim(),
-          date: form.date,
-          receiptName,
-        });
+        await createExpense(
+          {
+            amount: Number(form.amount),
+            category: form.category,
+            paymentMethod: form.paymentMethod,
+            description: form.description.trim(),
+            date: form.date,
+            receiptName,
+          },
+          form.receipt
+        );
       }
       closeExpenseDialog();
       await loadExpenses({ silent: true });
@@ -265,6 +420,128 @@ export default function ExpensesPage() {
     }
   };
 
+  const handleExportExpenses = () => {
+    const rowsToExport =
+      exportScope === "selected"
+        ? selectedExpenses
+        : exportScope === "current-page"
+          ? currentPageExpenses
+          : expenses;
+
+    if (rowsToExport.length === 0) {
+      notify.warning("No expenses available for selected export scope.");
+      return;
+    }
+
+    const csv = buildExpensesCsv(rowsToExport);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `expense_CSV_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    setExportDialogOpen(false);
+    notify.success(`Exported ${rowsToExport.length} expense(s) to CSV.`);
+  };
+
+  const downloadSampleCsv = () => {
+    const csv = buildSampleExpensesCsv();
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "expense_CSV_sample.csv";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const triggerImportPicker = () => {
+    importInputRef.current?.click();
+  };
+
+  const handleImportFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    setImportLoading(true);
+
+    try {
+      const text = await file.text();
+      const lines = text
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+      if (lines.length < 2) {
+        throw new Error("CSV must include a header and at least one row.");
+      }
+
+      const headers = parseCsvLine(lines[0]).map((h) => normalizeCsvHeader(h));
+      const required = ["amount", "category", "paymentmethod", "date"];
+      const missing = required.filter((key) => !headers.includes(key));
+      if (missing.length > 0) {
+        throw new Error(`Missing required CSV columns: ${missing.join(", ")}`);
+      }
+
+      let success = 0;
+      let failed = 0;
+      for (let i = 1; i < lines.length; i += 1) {
+        const values = parseCsvLine(lines[i]);
+        const rowData: Record<string, string> = {};
+        headers.forEach((h, idx) => {
+          rowData[h] = values[idx] ?? "";
+        });
+
+        const amount = Number(rowData.amount);
+        const category = rowData.category;
+        const paymentMethod = rowData.paymentmethod;
+        const date = rowData.date;
+        const description = rowData.description ?? "";
+        const receiptName = rowData.receiptname ? rowData.receiptname : null;
+
+        if (!Number.isFinite(amount) || amount <= 0 || !category || !paymentMethod || !date) {
+          failed += 1;
+          continue;
+        }
+
+        try {
+          await createExpense({
+            amount,
+            category,
+            paymentMethod,
+            date,
+            description,
+            receiptName,
+          });
+          success += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+
+      await loadExpenses({ silent: true });
+      if (success > 0 && failed > 0) {
+        notify.warning(`Imported ${success} expense(s). Skipped ${failed} invalid row(s).`);
+      } else if (success > 0) {
+        notify.success(`Imported ${success} expense(s) successfully.`);
+      } else {
+        notify.warning("No valid rows were imported.");
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to import expenses.";
+      notify.error(message);
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
   return (
     <DashboardShell
       title="Expenses"
@@ -281,18 +558,39 @@ export default function ExpensesPage() {
           </button>
           <button
             type="button"
-            disabled
-            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-400"
+            onClick={() => {
+              setExportScope(selectedExpenses.length > 0 ? "selected" : "all");
+              setExportDialogOpen(true);
+            }}
+            disabled={expenses.length === 0}
+            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-400"
           >
             Export
           </button>
           <button
             type="button"
-            disabled
-            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-400"
+            onClick={triggerImportPicker}
+            disabled={importLoading}
+            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-400"
           >
-            Import
+            {importLoading ? "Importing…" : "Import"}
           </button>
+          <button
+            type="button"
+            onClick={downloadSampleCsv}
+            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+          >
+            Download Sample CSV
+          </button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            onChange={(e) => {
+              void handleImportFile(e);
+            }}
+            className="hidden"
+          />
         </div>
       </section>
 
@@ -314,10 +612,50 @@ export default function ExpensesPage() {
                 setDeleteTarget(row);
                 setDeleteError(null);
               }}
+              onViewReceipt={handleViewReceipt}
+              viewingReceiptId={viewingReceiptId}
+              onSelectedIdsChange={setSelectedExpenseIds}
+              onCurrentPageRowsChange={setCurrentPageExpenses}
             />
           </div>
         )}
       </section>
+
+      {receiptPreview ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+          <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+              <h3 className="truncate pr-4 text-lg font-semibold text-slate-900">
+                {receiptPreview.name}
+              </h3>
+              <button
+                type="button"
+                onClick={closeReceiptPreview}
+                className="shrink-0 rounded-md px-2 py-1 text-slate-500 transition hover:bg-slate-100"
+                aria-label="Close receipt preview"
+              >
+                ×
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-auto bg-slate-50 p-2">
+              {receiptPreview.mimeType.includes("pdf") ? (
+                <iframe
+                  title={receiptPreview.name}
+                  src={receiptPreview.url}
+                  className="block h-[min(70vh,720px)] w-full rounded-lg border border-slate-200 bg-white"
+                />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element -- blob: URLs from the API are not passed through next/image.
+                <img
+                  src={receiptPreview.url}
+                  alt={receiptPreview.name}
+                  className="mx-auto max-h-[70vh] w-auto rounded-lg border border-slate-200 object-contain"
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {expenseDialogOpen ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/25 p-4 backdrop-blur-sm">
@@ -544,6 +882,98 @@ export default function ExpensesPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      ) : null}
+
+      {exportDialogOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/25 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="export-expenses-title"
+        >
+          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-lg">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 id="export-expenses-title" className="text-lg font-semibold text-slate-900">
+                Export expenses
+              </h3>
+              <button
+                type="button"
+                onClick={() => setExportDialogOpen(false)}
+                className="rounded-md px-2 py-1 text-slate-500 transition hover:bg-slate-100"
+                aria-label="Close export dialog"
+              >
+                ×
+              </button>
+            </div>
+            <div className="space-y-3">
+              <label className="grid cursor-pointer grid-cols-[1fr_3rem_auto] items-center gap-3 rounded-lg border border-slate-200 px-3 py-2">
+                <span className="text-sm text-slate-700">Selected expenses</span>
+                <span className="text-center text-sm font-semibold tabular-nums text-slate-900">
+                  {selectedExpenses.length}
+                </span>
+                <input
+                  type="radio"
+                  name="export-scope"
+                  value="selected"
+                  checked={exportScope === "selected"}
+                  onChange={() => setExportScope("selected")}
+                  disabled={selectedExpenses.length === 0}
+                  className="h-4 w-4"
+                />
+              </label>
+              <label className="grid cursor-pointer grid-cols-[1fr_3rem_auto] items-center gap-3 rounded-lg border border-slate-200 px-3 py-2">
+                <span className="text-sm text-slate-700">Current page</span>
+                <span className="text-center text-sm font-semibold tabular-nums text-slate-900">
+                  {currentPageExpenses.length}
+                </span>
+                <input
+                  type="radio"
+                  name="export-scope"
+                  value="current-page"
+                  checked={exportScope === "current-page"}
+                  onChange={() => setExportScope("current-page")}
+                  disabled={currentPageExpenses.length === 0}
+                  className="h-4 w-4"
+                />
+              </label>
+              <label className="grid cursor-pointer grid-cols-[1fr_3rem_auto] items-center gap-3 rounded-lg border border-slate-200 px-3 py-2">
+                <span className="text-sm text-slate-700">All expenses</span>
+                <span className="text-center text-sm font-semibold tabular-nums text-slate-900">
+                  {expenses.length}
+                </span>
+                <input
+                  type="radio"
+                  name="export-scope"
+                  value="all"
+                  checked={exportScope === "all"}
+                  onChange={() => setExportScope("all")}
+                  className="h-4 w-4"
+                />
+              </label>
+            </div>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setExportDialogOpen(false)}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleExportExpenses}
+                disabled={
+                  (exportScope === "selected" && selectedExpenses.length === 0) ||
+                  (exportScope === "current-page" && currentPageExpenses.length === 0) ||
+                  (exportScope === "all" && expenses.length === 0)
+                }
+                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-500"
+              >
+                Export CSV
+              </button>
+            </div>
           </div>
         </div>
       ) : null}

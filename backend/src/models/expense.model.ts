@@ -17,6 +17,7 @@ export class Expense extends Model<
   declare paymentMethod: string;
   declare description: string | null;
   declare receiptName: string | null;
+  declare receiptMimeType: string | null;
   declare date: string;
   declare createdAt: Date;
   declare updatedAt: Date;
@@ -51,6 +52,10 @@ Expense.init(
     },
     receiptName: {
       type: DataTypes.STRING(255),
+      allowNull: true
+    },
+    receiptMimeType: {
+      type: DataTypes.STRING(127),
       allowNull: true
     },
     date: {

@@ -2,6 +2,7 @@
 
 import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
 import EditIcon from "@mui/icons-material/Edit";
+import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import FilterListIcon from "@mui/icons-material/FilterList";
 import {
   Box,
@@ -21,7 +22,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { ChangeEvent, useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useState } from "react";
 
 export type ExpenseRow = {
   id: string;
@@ -31,12 +32,17 @@ export type ExpenseRow = {
   description: string;
   date: string;
   receiptName?: string;
+  receiptMimeType?: string | null;
 };
 
 type ExpensesTableProps = {
   rows: ExpenseRow[];
   onEditExpense?: (row: ExpenseRow) => void;
   onDeleteExpense?: (row: ExpenseRow) => void;
+  onViewReceipt?: (row: ExpenseRow) => void;
+  viewingReceiptId?: string | null;
+  onSelectedIdsChange?: (ids: string[]) => void;
+  onCurrentPageRowsChange?: (rows: ExpenseRow[]) => void;
 };
 
 type Order = "asc" | "desc";
@@ -61,6 +67,11 @@ const emptyFilters: AppliedFilters = {
 };
 
 const FILTER_OPTION_PREVIEW = 6;
+
+function receiptRowShowsViewAction(row: ExpenseRow): boolean {
+  const name = row.receiptName?.trim();
+  return Boolean(row.receiptMimeType || name);
+}
 
 const inputClass =
   "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100";
@@ -147,7 +158,15 @@ function formatUsdAmount(n: number): string {
   }).format(n);
 }
 
-export function ExpensesTable({ rows, onEditExpense, onDeleteExpense }: ExpensesTableProps) {
+export function ExpensesTable({
+  rows,
+  onEditExpense,
+  onDeleteExpense,
+  onViewReceipt,
+  viewingReceiptId,
+  onSelectedIdsChange,
+  onCurrentPageRowsChange,
+}: ExpensesTableProps) {
   const [order, setOrder] = useState<Order>("desc");
   const [orderBy, setOrderBy] = useState<SortableColumn>("date");
   const [selectedIds, setSelectedIds] = useState<readonly string[]>([]);
@@ -173,6 +192,8 @@ export function ExpensesTable({ rows, onEditExpense, onDeleteExpense }: Expenses
     rows.forEach((r) => set.add(r.paymentMethod));
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [rows]);
+
+  const rowIdSet = useMemo(() => new Set(rows.map((r) => r.id)), [rows]);
 
   const amountExtent = useMemo(() => {
     if (rows.length === 0) return null;
@@ -243,9 +264,12 @@ export function ExpensesTable({ rows, onEditExpense, onDeleteExpense }: Expenses
   };
 
   const handleSelectRow = (id: string) => {
-    setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((selectedId) => selectedId !== id) : [...prev, id]
-    );
+    setSelectedIds((prev) => {
+      const next = prev.filter((selectedId) => rowIdSet.has(selectedId));
+      return next.includes(id)
+        ? next.filter((selectedId) => selectedId !== id)
+        : [...next, id];
+    });
   };
 
   const openFilterDialog = () => {
@@ -317,9 +341,22 @@ export function ExpensesTable({ rows, onEditExpense, onDeleteExpense }: Expenses
     setDraftFilters((prev) => ({ ...prev, amountMin: lo, amountMax: hi }));
   };
 
-  const numSelected = selectedIds.length;
+  const validSelectedIds = useMemo(
+    () => selectedIds.filter((id) => rowIdSet.has(id)),
+    [selectedIds, rowIdSet]
+  );
+
+  const numSelected = validSelectedIds.length;
   const rowCount = paginatedRows.length;
   const hasActiveFilters = filtersActive(appliedFilters);
+
+  useEffect(() => {
+    onSelectedIdsChange?.([...validSelectedIds]);
+  }, [validSelectedIds, onSelectedIdsChange]);
+
+  useEffect(() => {
+    onCurrentPageRowsChange?.(paginatedRows);
+  }, [paginatedRows, onCurrentPageRowsChange]);
 
   return (
     <Paper
@@ -665,7 +702,12 @@ export function ExpensesTable({ rows, onEditExpense, onDeleteExpense }: Expenses
                   key={headCell.id}
                   align={headCell.align ?? "left"}
                   sortDirection={orderBy === headCell.id ? order : false}
-                  sx={{ fontWeight: 700 }}
+                  sx={{
+                    fontWeight: 700,
+                    ...(headCell.id === "date"
+                      ? { minWidth: 120, whiteSpace: "nowrap" }
+                      : {}),
+                  }}
                 >
                   <TableSortLabel
                     active={orderBy === headCell.id}
@@ -687,14 +729,14 @@ export function ExpensesTable({ rows, onEditExpense, onDeleteExpense }: Expenses
               <TableRow
                 key={row.id}
                 hover
-                selected={selectedIds.includes(row.id)}
+                selected={validSelectedIds.includes(row.id)}
                 onClick={() => handleSelectRow(row.id)}
                 sx={{ cursor: "pointer" }}
               >
                 <TableCell padding="checkbox">
                   <Checkbox
                     color="primary"
-                    checked={selectedIds.includes(row.id)}
+                    checked={validSelectedIds.includes(row.id)}
                     slotProps={{ input: { "aria-label": `select expense ${row.id}` } }}
                   />
                 </TableCell>
@@ -711,16 +753,55 @@ export function ExpensesTable({ rows, onEditExpense, onDeleteExpense }: Expenses
                     {getDescriptionPreview(row.description)}
                   </Typography>
                 </TableCell>
-                <TableCell>{row.date}</TableCell>
-                <TableCell>
-                  <Typography
-                    variant="body2"
-                    noWrap
-                    title={row.receiptName ?? "No file"}
-                    sx={{ maxWidth: 180 }}
+                <TableCell sx={{ minWidth: 120, whiteSpace: "nowrap" }}>
+                  {row.date}
+                </TableCell>
+                <TableCell sx={{ maxWidth: 240 }}>
+                  <Box
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 0.25,
+                      minWidth: 0,
+                    }}
                   >
-                    {row.receiptName ?? "No file"}
-                  </Typography>
+                    <Typography
+                      variant="body2"
+                      noWrap
+                      component="span"
+                      title={row.receiptName ?? "No file"}
+                      sx={{ flex: 1, minWidth: 0 }}
+                    >
+                      {row.receiptName ?? "No file"}
+                    </Typography>
+                    {receiptRowShowsViewAction(row) ? (
+                      <Tooltip
+                        title={
+                          row.receiptMimeType
+                            ? "View receipt"
+                            : "No file uploaded — CSV/import may list a name only. Edit and attach a receipt to preview."
+                        }
+                      >
+                        <IconButton
+                          size="small"
+                          aria-label={`View receipt ${row.receiptName ?? row.id}`}
+                          disabled={viewingReceiptId === row.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onViewReceipt?.(row);
+                          }}
+                          sx={{
+                            flexShrink: 0,
+                            color: row.receiptMimeType
+                              ? "text.secondary"
+                              : "action.disabled",
+                          }}
+                        >
+                          <VisibilityOutlinedIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    ) : null}
+                  </Box>
                 </TableCell>
                 <TableCell
                   align="right"

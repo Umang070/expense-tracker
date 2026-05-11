@@ -22,6 +22,15 @@ function authHeaders(): HeadersInit {
   return headers;
 }
 
+function authHeadersMultipart(): HeadersInit {
+  const token = getToken();
+  const headers: HeadersInit = {};
+  if (token) {
+    (headers as Record<string, string>).Authorization = `Bearer ${token}`;
+  }
+  return headers;
+}
+
 async function parseErrorMessage(response: Response): Promise<string> {
   const data = (await response.json().catch(() => null)) as
     | { message?: string }
@@ -37,12 +46,20 @@ export type ApiExpense = {
   paymentMethod: string;
   description: string | null;
   receiptName: string | null;
+  receiptMimeType?: string | null;
   date: string;
   createdAt?: string;
   updatedAt?: string;
 };
 
 export function mapApiExpenseToRow(record: ApiExpense): ExpenseRow {
+  const mimeFromSnakeCase = (
+    record as ApiExpense & { receipt_mime_type?: string | null }
+  ).receipt_mime_type;
+
+  const receiptMimeType =
+    record.receiptMimeType ?? mimeFromSnakeCase ?? undefined;
+
   return {
     id: String(record.id),
     amount: Number(record.amount),
@@ -51,6 +68,7 @@ export function mapApiExpenseToRow(record: ApiExpense): ExpenseRow {
     description: record.description ?? "",
     date: record.date,
     receiptName: record.receiptName ?? undefined,
+    receiptMimeType,
   };
 }
 
@@ -97,8 +115,34 @@ export type CreateExpensePayload = {
 };
 
 export async function createExpense(
-  payload: CreateExpensePayload
+  payload: CreateExpensePayload,
+  receiptFile?: File | null
 ): Promise<ApiExpense> {
+  if (receiptFile) {
+    const fd = new FormData();
+    fd.append("amount", String(payload.amount));
+    fd.append("category", payload.category);
+    fd.append("paymentMethod", payload.paymentMethod);
+    fd.append("description", payload.description ?? "");
+    fd.append("date", payload.date);
+    if (payload.receiptName) {
+      fd.append("receiptName", payload.receiptName);
+    }
+    fd.append("receipt", receiptFile);
+
+    const response = await fetch(`${API_BASE_URL}/api/expenses`, {
+      method: "POST",
+      headers: authHeadersMultipart(),
+      body: fd,
+    });
+
+    if (!response.ok) {
+      throw new Error(await parseErrorMessage(response));
+    }
+
+    return (await response.json()) as ApiExpense;
+  }
+
   const response = await fetch(`${API_BASE_URL}/api/expenses`, {
     method: "POST",
     headers: authHeaders(),
@@ -130,8 +174,44 @@ export type UpdateExpensePayload = Partial<{
 
 export async function updateExpense(
   id: number,
-  payload: UpdateExpensePayload
+  payload: UpdateExpensePayload,
+  receiptFile?: File | null
 ): Promise<ApiExpense> {
+  if (receiptFile) {
+    const fd = new FormData();
+    if (payload.amount !== undefined) {
+      fd.append("amount", String(payload.amount));
+    }
+    if (payload.category !== undefined) {
+      fd.append("category", payload.category);
+    }
+    if (payload.paymentMethod !== undefined) {
+      fd.append("paymentMethod", payload.paymentMethod);
+    }
+    if (payload.description !== undefined) {
+      fd.append("description", payload.description);
+    }
+    if (payload.date !== undefined) {
+      fd.append("date", payload.date);
+    }
+    if (payload.receiptName !== undefined && payload.receiptName !== null) {
+      fd.append("receiptName", payload.receiptName);
+    }
+    fd.append("receipt", receiptFile);
+
+    const response = await fetch(`${API_BASE_URL}/api/expenses/${id}`, {
+      method: "PUT",
+      headers: authHeadersMultipart(),
+      body: fd,
+    });
+
+    if (!response.ok) {
+      throw new Error(await parseErrorMessage(response));
+    }
+
+    return (await response.json()) as ApiExpense;
+  }
+
   const response = await fetch(`${API_BASE_URL}/api/expenses/${id}`, {
     method: "PUT",
     headers: authHeaders(),
@@ -143,6 +223,28 @@ export async function updateExpense(
   }
 
   return (await response.json()) as ApiExpense;
+}
+
+export async function fetchExpenseReceipt(
+  expenseId: number
+): Promise<{ blob: Blob; mimeType: string }> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/expenses/${expenseId}/receipt`,
+    {
+      method: "GET",
+      headers: authHeadersMultipart(),
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+
+  const mimeType =
+    response.headers.get("content-type") ?? "application/octet-stream";
+  const blob = await response.blob();
+
+  return { blob, mimeType };
 }
 
 export async function deleteExpense(id: number): Promise<void> {

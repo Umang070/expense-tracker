@@ -25,6 +25,15 @@ const paymentMethods = [
   "Net Banking"
 ] as const;
 
+const optionalReceiptName = z
+  .union([z.string(), z.literal(""), z.undefined(), z.null()])
+  .optional()
+  .transform((v) => {
+    if (v === undefined || v === null || v === "") return null;
+    const s = String(v).trim().slice(0, 255);
+    return s.length === 0 ? null : s;
+  });
+
 export const createExpenseSchema = z.object({
   amount: z.coerce.number().positive("Amount is required."),
   category: z.enum(categories, { error: "Category is required." }),
@@ -33,7 +42,7 @@ export const createExpenseSchema = z.object({
   }),
   description: z.string().trim().max(500).optional().default(""),
   date: z.string().date("Date is required."),
-  receiptName: z.string().trim().max(255).optional().nullable()
+  receiptName: optionalReceiptName
 });
 
 export const updateExpenseSchema = z
@@ -43,7 +52,7 @@ export const updateExpenseSchema = z
     paymentMethod: z.enum(paymentMethods).optional(),
     description: z.string().trim().max(500).optional(),
     date: z.string().date("Date is invalid.").optional(),
-    receiptName: z.string().trim().max(255).optional().nullable()
+    receiptName: optionalReceiptName
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: "At least one field is required for update."
