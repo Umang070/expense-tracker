@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { SpendingByCategory } from "@/components/analytics/spending-by-category";
+import { SpendingCategoryRankApex } from "@/components/analytics/spending-category-rank-apex";
 import { SpendingTrendChart } from "@/components/analytics/spending-trend-chart";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import type { ExpenseRow } from "@/components/expenses/expenses-table";
 import { summarizeByCategory } from "@/lib/analytics";
 import { listExpenses, mapApiExpenseToRow } from "@/lib/expenses";
+import { SpendingDailyPattern } from "@/components/analytics/spending-daily-pattern";
 
 function formatMoney(n: number): string {
   return new Intl.NumberFormat("en-US", {
@@ -92,7 +94,9 @@ export default function AnalyticsPage() {
           ) : null}
 
           <SpendingByCategory rows={rows} />
+          <SpendingCategoryRankApex rows={rows} />
           <SpendingTrendChart rows={rows} />
+          <SpendingDailyPattern rows={rows} />
         </div>
       )}
     </DashboardShell>
