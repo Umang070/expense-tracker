@@ -9,6 +9,12 @@ const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 export const metadata: Metadata = {
   title: "Expense Tracker",
   description: "Track your spending with clear insights",
+  icons: {
+    icon: [
+      { url: "/favicon.png", sizes: "32x32", type: "image/png" },
+      // { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+    ],
+  },
 };
 
 export default function RootLayout({

@@ -56,24 +56,6 @@ type SpendingDailyPatternProps = {
 };
 
 
-function generateData(count:number, yrange: any) {
-    var i = 0;
-    var series = [];
-    while (i < count) {
-      var x = (i + 1).toString();
-      var y =
-      Math.floor(Math.random() * (yrange.max - yrange.min + 1)) + yrange.min;
-    
-      series.push({
-        x: x,
-        y: y
-      });
-      i++;
-    }
-    return series;
-    }
-
-
 
 type HeatmapData = {
   name: string;
@@ -97,6 +79,13 @@ const monthNames = [
   "Nov",
   "Dec",
 ];
+
+type HeatmapRange = {
+    from: number;
+    to: number;
+    name: string;
+    color: string;
+  };
 
 export function buildExpenseHeatmapData(
     expenses: ExpenseRow[]
@@ -132,6 +121,58 @@ export function buildExpenseHeatmapData(
   }
 
 
+export function generateHeatmapRanges(
+    expenses: ExpenseRow[]
+  ): HeatmapRange[] {
+    // Get all amounts
+    const amounts = expenses.map((expense) => expense.amount);
+  
+    // Handle empty state
+    if (amounts.length === 0) {
+      return [
+        {
+          from: 0,
+          to: 0,
+          name: "No Data",
+          color: "#E2E8F0",
+        },
+      ];
+    }
+  
+    const min = 0;
+    const max = Math.max(...amounts);
+  
+    // Divide into 4 equal ranges
+    const step = (max - min) / 4;
+  
+    return [
+      {
+        from: min,
+        to: min + step,
+        name: "Low",
+        color: "#22C55E",
+      },
+      {
+        from: min + step + 0.01,
+        to: min + step * 2,
+        name: "Medium",
+        color: "#3B82F6",
+      },
+      {
+        from: min + step * 2 + 0.01,
+        to: min + step * 3,
+        name: "High",
+        color: "#F59E0B",
+      },
+      {
+        from: min + step * 3 + 0.01,
+        to: max,
+        name: "Extreme",
+        color: "#EF4444",
+      },
+    ];
+  }
+
        
 export function SpendingDailyPattern({ rows }: SpendingDailyPatternProps) {
   const slices = useMemo(() => summarizeByCategory(rows), [rows]);
@@ -152,94 +193,15 @@ export function SpendingDailyPattern({ rows }: SpendingDailyPatternProps) {
     [categories.length]
   );
 
-
-//   const options: ApexOptions = useMemo(() => {
-//     const colors = categories.map(
-//       (_, i) => BAR_COLORS[i % BAR_COLORS.length] ?? "#64748b"
-//     );
-
-//     return {
-//       chart: {
-//         type: "bar",
-//         height: chartHeight,
-//         toolbar: { show: true },
-//       },
-//       plotOptions: {
-//         bar: {
-//           horizontal: true,
-//           borderRadius: 4,
-//           borderRadiusApplication: "end",
-//           distributed: true,
-//           dataLabels: {
-//             position: "top",
-//           },
-//         },
-//       },
-//       colors,
-//       legend: { show: true },
-//       dataLabels: {
-//         enabled: true,
-//         offsetX: 13,
-//         style: {
-//           fontSize: "11px",
-//           fontWeight: 600,
-//           colors: ["#334155"],
-//         },
-//         formatter: (_val, opts) => {
-//           const idx = opts?.dataPointIndex ?? 0;
-//           const p = percents[idx];
-//           return p !== undefined ? `${p.toFixed(1)}%` : "";
-//         },
-//       },
-//       xaxis: {
-//         categories,
-//         labels: {
-//           formatter: (val: string | number) =>
-//             new Intl.NumberFormat("en-US", {
-//               style: "currency",
-//               currency: "USD",
-//               maximumFractionDigits: 0,
-//             }).format(Number(val)),
-//         },
-//       },
-//       yaxis: {
-//         labels: {
-//           maxWidth: 160,
-//           style: { fontSize: "12px" },
-//         },
-//       },
-//       tooltip: {
-//         y: {
-//           formatter: (val: number, opts) => {
-//             const idx = opts?.dataPointIndex ?? 0;
-//             const pct = percents[idx];
-//             const pctStr = pct !== undefined ? ` (${pct.toFixed(1)}% of total)` : "";
-//             return `${formatMoney(val)}${pctStr}`;
-//           },
-//         },
-//       },
-//       grid: {
-//         borderColor: "#e2e8f0",
-//         strokeDashArray: 4,
-//         xaxis: { lines: { show: true } },
-//         yaxis: { lines: { show: false } },
-//       },
-//     };
-//   }, [categories, chartHeight, percents]);
-
-  const series = useMemo(
+const series = useMemo(
     () => buildExpenseHeatmapData(rows),
     [categories]
   );
 
+console.log("Heatmap ranges", generateHeatmapRanges(rows));
+const options: ApexOptions = useMemo(() => {
 
-
-const data = buildExpenseHeatmapData(rows);
-console.log("Series", data);
-
-console.log("Rows ", rows);
-
-const options: ApexOptions =  {
+    return {
     chart: {
       height: 350,
       type: 'heatmap',
@@ -250,44 +212,49 @@ const options: ApexOptions =  {
         radius: 0,
         useFillColorAsStroke: true,
         colorScale: {
-          ranges: [{
-              from: -30,
-              to: 5,
-              name: 'low',
-              color: '#00A100'
-            },
-            {
-              from: 6,
-              to: 20,
-              name: 'medium',
-              color: '#128FD9'
-            },
-            {
-              from: 21,
-              to: 45,
-              name: 'high',
-              color: '#FFB200'
-            },
-            {
-              from: 46,
-              to: 55,
-              name: 'extreme',
-              color: '#FF0000'
-            }
-          ]
-        }
-      }
+          ranges: generateHeatmapRanges(rows)
+        },
+        distributed: false
+      } 
     },
+    tooltip: {
+        enabled: true,
+                y: {
+                    formatter: (value) => { 
+                        return `${formatMoney(value)}`
+                    },
+                    title: {
+                      formatter : () => "Total Spending:" // removes "May"
+                    }
+                  },
+                x:{
+                    show: true,
+                    formatter: (val: number, opts) => {
+                        const idx = opts?.dataPointIndex ?? 0;
+                        const month = monthNames[opts?.seriesIndex ?? 0];
+                        return `${month} ${idx+1}`;
+                      },
+                }
+             
+              },
     dataLabels: {
       enabled: false
     },
     stroke: {
       width: 1
     },
-    title: {
-      text: 'HeatMap Chart with Color Range'
+    xaxis:{
+        title: {
+            text:" Day"
+        }
+    },
+    yaxis:{
+        title: {
+            text:" Month"
+        }
     },
   }
+}, [categories])
 
   if (rows.length === 0 || slices.length === 0) {
     return (
@@ -328,6 +295,7 @@ const options: ApexOptions =  {
           <ReactApexChart
             options={options}
             series={series}
+            name = "Speding" 
             type="heatmap"
             height={chartHeight}
           />
