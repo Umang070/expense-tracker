@@ -3,6 +3,12 @@ import type { ExpenseRow } from "@/components/expenses/expenses-table";
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5001";
 
+if (!API_BASE_URL) {
+  throw new Error("NEXT_PUBLIC_API_BASE_URL is not defined");
+}
+
+console.log("API_BASE_URL =", API_BASE_URL);
+
 function getToken(): string | null {
   if (typeof window === "undefined") return null;
   return (
