@@ -29,7 +29,7 @@ export async function loginUser(payload: LoginPayload): Promise<AuthResponse> {
     },
     body: JSON.stringify(payload),
   });
-
+  console.log("Login ", response);
   if (!response.ok) {
     const errorData = (await response.json().catch(() => null)) as
       | { message?: string }
