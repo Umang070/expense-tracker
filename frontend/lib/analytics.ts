@@ -106,7 +106,6 @@ export function spendingSeriesByGranularity(
     } else {
       key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
     }
-
     map.set(key, (map.get(key) ?? 0) + r.amount);
   }
 

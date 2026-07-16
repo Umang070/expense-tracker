@@ -99,15 +99,20 @@ export function buildExpenseHeatmapData(
   
     // Map expense data
     expenses.forEach((expense) => {
-      const expenseDate = new Date(expense.date);
-  
-      const monthIndex = expenseDate.getMonth();
-      const day = expenseDate.getDate();
-  
-      const monthName = monthNames[monthIndex];
-  
+      const [year, month, day] = expense.date
+      .slice(0, 10)
+      .split("-")
+      .map(Number);
+    
+    const monthIndex = month - 1;
+    const monthName = monthNames[monthIndex];
+    
+   
+
+
+
       // Add amount to matching day
-      monthlyMap[monthName][day - 1] += expense.amount;
+      monthlyMap[monthName][day-1] += expense.amount;
     });
   
     // Convert to ApexCharts heatmap format
@@ -198,7 +203,6 @@ const series = useMemo(
     [categories]
   );
 
-console.log("Heatmap ranges", generateHeatmapRanges(rows));
 const options: ApexOptions = useMemo(() => {
 
     return {
@@ -263,13 +267,12 @@ const options: ApexOptions = useMemo(() => {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <CardTitle className="text-lg font-medium tracking-wide text-muted-foreground uppercase">Daily Spending Pattern</CardTitle>
 
-          <CardDescription>Add expenses to see daily spending.</CardDescription>
           </div>
         </CardHeader>
      
-        {/* <CardContent className="pt-6 text-sm text-muted-foreground">
-          Add expenses to see monthly trend lines.
-        </CardContent> */}
+        <CardContent className="pt-6 text-sm text-muted-foreground">
+         Add expenses to see daily spending
+        </CardContent>
       </Card>
     );
   }

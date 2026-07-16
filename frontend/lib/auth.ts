@@ -25,8 +25,6 @@ if (!API_BASE_URL) {
   throw new Error("NEXT_PUBLIC_API_BASE_URL is not defined");
 }
 
-console.log("API_BASE_URL =", API_BASE_URL);
-
 export async function loginUser(payload: LoginPayload): Promise<AuthResponse> {
   const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
     method: "POST",

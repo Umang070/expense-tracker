@@ -165,13 +165,12 @@ export function SpendingCategoryRankApex({ rows }: SpendingCategoryRankApexProps
         <div className="flex flex-wrap items-start justify-between gap-3">
           <CardTitle className="text-lg font-medium tracking-wide text-muted-foreground uppercase">Top Categories</CardTitle>
 
-          <CardDescription>Add expenses to see ranked spending by category.</CardDescription>
           </div>
         </CardHeader>
      
-        {/* <CardContent className="pt-6 text-sm text-muted-foreground">
-          Add expenses to see monthly trend lines.
-        </CardContent> */}
+        <CardContent className="pt-6 text-sm text-muted-foreground">
+          Add expenses to see ranked spending by category
+        </CardContent>
       </Card>
     );
   }

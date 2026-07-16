@@ -74,17 +74,17 @@ export function SpendingByCategory({ rows }: SpendingByCategoryProps) {
 
   if (rows.length === 0) {
     return (
-      <Card>
-        <CardHeader>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <CardTitle className="text-lg font-medium tracking-wide text-muted-foreground uppercase"> Spending by Category</CardTitle>
-            <CardDescription>Add expenses to see your category breakdown.</CardDescription>
-           
-          </div>
-        </div>
+  <Card className="border-slate-200 ring-slate-200/80">
+        <CardHeader className="border-b border-border/60">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <CardTitle className="text-lg font-medium tracking-wide text-muted-foreground uppercase">Spending by Category</CardTitle>
 
+          </div>
         </CardHeader>
+     
+        <CardContent className="pt-6 text-sm text-muted-foreground">
+        Add expenses to see your category breakdown.
+        </CardContent>
       </Card>
     );
   }

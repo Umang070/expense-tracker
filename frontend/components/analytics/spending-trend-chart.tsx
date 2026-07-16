@@ -67,7 +67,6 @@ export function SpendingTrendChart({ rows }: SpendingTrendChartProps) {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <CardTitle className="text-lg font-medium tracking-wide text-muted-foreground uppercase"> Spending trends</CardTitle>
 
-          <CardDescription>No spending trend data available</CardDescription>
           </div>
         </CardHeader>
      
@@ -173,7 +172,7 @@ export function SpendingTrendChart({ rows }: SpendingTrendChartProps) {
           <SpendingTrendApexChart
             granularity={granularity}
             categories={chartData.map((d) =>
-              granularity === "year" ? d.month : String(d.month).slice(0, 6)
+               d.month 
             )}
             seriesData={chartData.map((d) => d.desktop)}
             height={350}
